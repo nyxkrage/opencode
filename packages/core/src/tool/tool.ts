@@ -1,6 +1,6 @@
 export * as Tool from "./tool"
 
-import { ToolDefinition, ToolFailure, ToolOutput, type ToolCall } from "@opencode-ai/llm"
+import { ToolDefinition, ToolFailure, ToolOutput, type ToolCall, type ToolInputFormat } from "@opencode-ai/llm"
 import { Effect, JsonSchema, Schema } from "effect"
 import type { AgentV2 } from "../agent"
 import type { SessionMessage } from "../session/message"
@@ -44,6 +44,7 @@ type Config<
 > = {
   readonly description: string
   readonly input: Input
+  readonly inputFormat?: ToolInputFormat
   readonly output: Output
   readonly structured?: Structured
   readonly toStructuredOutput?: (input: {
@@ -79,10 +80,11 @@ export function make<
     definition: (name) => {
       const cached = definitions.get(name)
       if (cached) return cached
-      const definition = new ToolDefinition({
+      const definition = ToolDefinition.make({
         name,
         description: config.description,
         inputSchema: toJsonSchema(config.input),
+        inputFormat: config.inputFormat,
         outputSchema: toJsonSchema(config.structured ?? config.output),
       })
       definitions.set(name, definition)

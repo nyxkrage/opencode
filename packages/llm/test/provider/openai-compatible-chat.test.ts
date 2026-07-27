@@ -90,6 +90,46 @@ describe("OpenAI-compatible Chat route", () => {
     }),
   )
 
+  it.effect("falls freeform tools back to one text function parameter", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare(
+        LLM.updateRequest(request, {
+          tools: [
+            {
+              name: "apply_patch",
+              description: "Apply a patch",
+              inputFormat: {
+                type: "grammar",
+                syntax: "lark",
+                definition: 'start: "*** Begin Patch" LF',
+              },
+            },
+          ],
+          toolChoice: "apply_patch",
+        }),
+      )
+
+      expect(prepared.body).toMatchObject({
+        tools: [
+          {
+            type: "function",
+            function: {
+              name: "apply_patch",
+              description: "Apply a patch",
+              parameters: {
+                type: "object",
+                properties: { text: { type: "string" } },
+                required: ["text"],
+                additionalProperties: false,
+              },
+            },
+          },
+        ],
+        tool_choice: { type: "function", function: { name: "apply_patch" } },
+      })
+    }),
+  )
+
   it.effect("provides model helpers for compatible provider families", () =>
     Effect.gen(function* () {
       expect(

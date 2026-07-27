@@ -3,6 +3,7 @@ import type {
   ToolCallPart,
   ToolContent,
   ToolDefinition as ToolDefinitionClass,
+  ToolInputFormat,
   ToolOutput as ToolOutputType,
 } from "./schema"
 import { ToolDefinition, ToolFailure, ToolOutput } from "./schema"
@@ -84,6 +85,7 @@ export type ExecutableTools = Record<string, AnyExecutableTool>
 type TypedToolConfig = {
   readonly description: string
   readonly parameters: ToolSchema<any>
+  readonly inputFormat?: ToolInputFormat
   readonly success: ToolSchema<any>
   readonly execute?: ToolExecute<ToolSchema<any>, ToolSchema<any>>
   readonly toModelOutput?: ToolToModelOutput<ToolSchema<any>, ToolSchema<any>>
@@ -93,6 +95,7 @@ type TypedToolConfig = {
 type DynamicToolConfig = {
   readonly description: string
   readonly jsonSchema: JsonSchema.JsonSchema
+  readonly inputFormat?: ToolInputFormat
   readonly outputSchema?: JsonSchema.JsonSchema
   readonly execute?: (params: unknown, context?: ToolExecuteContext) => Effect.Effect<unknown, ToolFailure>
   readonly toModelOutput?: (input: ToolModelOutputInput<unknown, unknown>) => ReadonlyArray<ToolContent>
@@ -133,6 +136,7 @@ type DynamicToolConfig = {
 export function make<Parameters extends ToolSchema<any>, Success extends ToolSchema<any>>(config: {
   readonly description: string
   readonly parameters: Parameters
+  readonly inputFormat?: ToolInputFormat
   readonly success: Success
   readonly execute: ToolExecute<Parameters, Success>
   readonly toModelOutput?: ToolToModelOutput<Parameters, Success>
@@ -141,6 +145,7 @@ export function make<Parameters extends ToolSchema<any>, Success extends ToolSch
 export function make<Parameters extends ToolSchema<any>, Success extends ToolSchema<any>>(config: {
   readonly description: string
   readonly parameters: Parameters
+  readonly inputFormat?: ToolInputFormat
   readonly success: Success
   readonly execute?: undefined
   readonly toModelOutput?: ToolToModelOutput<Parameters, Success>
@@ -149,6 +154,7 @@ export function make<Parameters extends ToolSchema<any>, Success extends ToolSch
 export function make(config: {
   readonly description: string
   readonly jsonSchema: JsonSchema.JsonSchema
+  readonly inputFormat?: ToolInputFormat
   readonly outputSchema?: JsonSchema.JsonSchema
   readonly execute: (params: unknown, context?: ToolExecuteContext) => Effect.Effect<unknown, ToolFailure>
   readonly toModelOutput?: (input: ToolModelOutputInput<unknown, unknown>) => ReadonlyArray<ToolContent>
@@ -157,6 +163,7 @@ export function make(config: {
 export function make(config: {
   readonly description: string
   readonly jsonSchema: JsonSchema.JsonSchema
+  readonly inputFormat?: ToolInputFormat
   readonly outputSchema?: JsonSchema.JsonSchema
   readonly execute?: undefined
   readonly toModelOutput?: (input: ToolModelOutputInput<unknown, unknown>) => ReadonlyArray<ToolContent>
@@ -180,6 +187,7 @@ export function make(config: TypedToolConfig | DynamicToolConfig): AnyTool {
         name: "",
         description: config.description,
         inputSchema: config.jsonSchema,
+        inputFormat: config.inputFormat,
         outputSchema: config.outputSchema,
       }),
     }
@@ -200,6 +208,7 @@ export function make(config: TypedToolConfig | DynamicToolConfig): AnyTool {
       name: "",
       description: config.description,
       inputSchema: toJsonSchema(config.parameters),
+      inputFormat: config.inputFormat,
       outputSchema: toJsonSchema(config.success),
     }),
   }
@@ -225,6 +234,7 @@ export const toDefinitions = (tools: Tools): ReadonlyArray<ToolDefinitionClass> 
         name,
         description: item._definition.description,
         inputSchema: item._definition.inputSchema,
+        inputFormat: item._definition.inputFormat,
         outputSchema: item._definition.outputSchema,
       }),
   )

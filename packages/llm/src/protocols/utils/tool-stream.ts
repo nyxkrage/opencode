@@ -63,8 +63,12 @@ const inputDelta = (tool: PendingTool, text: string) =>
     text,
   })
 
-const toolCall = (route: string, tool: PendingTool, inputOverride?: string) =>
-  parseToolInput(route, tool.name, inputOverride ?? tool.input).pipe(
+type ParseInput = (route: string, name: string, input: string) => Effect.Effect<unknown, LLMError>
+
+const parseFreeformInput: ParseInput = (_route, _name, input) => Effect.succeed({ text: input })
+
+const toolCall = (route: string, tool: PendingTool, inputOverride?: string, parseInput: ParseInput = parseToolInput) =>
+  parseInput(route, tool.name, inputOverride ?? tool.input).pipe(
     Effect.map(
       (input): ToolCall =>
         LLMEvent.toolCall({
@@ -161,7 +165,13 @@ export const appendExisting = <K extends StreamKey>(
  * from state, and return the optional public `tool-call` event. Missing keys are
  * a no-op because some providers emit stop events for non-tool content blocks.
  */
-export const finish = <K extends StreamKey>(route: string, tools: State<K>, key: K) =>
+const finishTool = <K extends StreamKey>(
+  route: string,
+  tools: State<K>,
+  key: K,
+  input: string | undefined,
+  parseInput: ParseInput,
+) =>
   Effect.gen(function* () {
     const tool = tools[key]
     if (!tool) return { tools }
@@ -169,10 +179,13 @@ export const finish = <K extends StreamKey>(route: string, tools: State<K>, key:
       tools: withoutTool(tools, key),
       events: [
         LLMEvent.toolInputEnd({ id: tool.id, name: tool.name, providerMetadata: tool.providerMetadata }),
-        yield* toolCall(route, tool),
+        yield* toolCall(route, tool, input, parseInput),
       ],
     }
   })
+
+export const finish = <K extends StreamKey>(route: string, tools: State<K>, key: K) =>
+  finishTool(route, tools, key, undefined, parseToolInput)
 
 /**
  * Finalize one pending tool call with an authoritative final input string.
@@ -180,17 +193,15 @@ export const finish = <K extends StreamKey>(route: string, tools: State<K>, key:
  * arguments on `response.output_item.done`; the final value wins.
  */
 export const finishWithInput = <K extends StreamKey>(route: string, tools: State<K>, key: K, input: string) =>
-  Effect.gen(function* () {
-    const tool = tools[key]
-    if (!tool) return { tools }
-    return {
-      tools: withoutTool(tools, key),
-      events: [
-        LLMEvent.toolInputEnd({ id: tool.id, name: tool.name, providerMetadata: tool.providerMetadata }),
-        yield* toolCall(route, tool, input),
-      ],
-    }
-  })
+  finishTool(route, tools, key, input, parseToolInput)
+
+/** Finalize one pending freeform call and wrap its raw text for canonical tool dispatch. */
+export const finishFreeform = <K extends StreamKey>(route: string, tools: State<K>, key: K) =>
+  finishTool(route, tools, key, undefined, parseFreeformInput)
+
+/** Finalize one pending freeform call with the provider's authoritative final text. */
+export const finishFreeformWithInput = <K extends StreamKey>(route: string, tools: State<K>, key: K, input: string) =>
+  finishTool(route, tools, key, input, parseFreeformInput)
 
 /**
  * Finalize every pending tool call at once. OpenAI Chat has this shape: it does

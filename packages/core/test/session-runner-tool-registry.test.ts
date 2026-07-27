@@ -121,6 +121,38 @@ describe("ToolRegistry", () => {
     }),
   )
 
+  it.effect("materializes freeform input formats with their function fallback schema", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        apply_patch: Tool.make({
+          description: "Apply a patch",
+          input: Schema.Struct({ text: Schema.String }),
+          inputFormat: {
+            type: "grammar",
+            syntax: "lark",
+            definition: 'start: "*** Begin Patch" LF',
+          },
+          output: Schema.String,
+          execute: ({ text }) => Effect.succeed(text),
+        }),
+      })
+
+      const [definition] = yield* toolDefinitions(service)
+      expect(definition?.inputFormat).toEqual({
+        type: "grammar",
+        syntax: "lark",
+        definition: 'start: "*** Begin Patch" LF',
+      })
+      expect(definition?.inputSchema).toMatchObject({
+        type: "object",
+        properties: { text: { type: "string" } },
+        required: ["text"],
+        additionalProperties: false,
+      })
+    }),
+  )
+
   it.effect("removes a scoped registration", () =>
     Effect.gen(function* () {
       const service = yield* ToolRegistry.Service

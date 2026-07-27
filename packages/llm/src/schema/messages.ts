@@ -221,10 +221,30 @@ export namespace Message {
     make({ role: "tool", content: ["type" in result ? result : ToolResultPart.make(result)] })
 }
 
+export const ToolInputFormat = Schema.Union([
+  Schema.Struct({
+    type: Schema.Literal("text"),
+  }),
+  Schema.Struct({
+    type: Schema.Literal("grammar"),
+    syntax: Schema.Literals(["lark", "regex"]),
+    definition: Schema.String,
+  }),
+]).pipe(Schema.toTaggedUnion("type"))
+export type ToolInputFormat = Schema.Schema.Type<typeof ToolInputFormat>
+
+const freeformInputSchema: JsonSchema = {
+  type: "object",
+  properties: { text: { type: "string" } },
+  required: ["text"],
+  additionalProperties: false,
+}
+
 export class ToolDefinition extends Schema.Class<ToolDefinition>("LLM.ToolDefinition")({
   name: Schema.String,
   description: Schema.String,
   inputSchema: JsonSchema,
+  inputFormat: Schema.optional(ToolInputFormat),
   outputSchema: Schema.optional(JsonSchema),
   cache: Schema.optional(CacheHint),
   metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
@@ -232,10 +252,20 @@ export class ToolDefinition extends Schema.Class<ToolDefinition>("LLM.ToolDefini
 }) {}
 
 export namespace ToolDefinition {
-  export type Input = ToolDefinition | ConstructorParameters<typeof ToolDefinition>[0]
+  type Fields = ConstructorParameters<typeof ToolDefinition>[0]
+  type FreeformInput = Omit<Fields, "inputSchema"> & {
+    readonly inputSchema?: JsonSchema
+    readonly inputFormat: ToolInputFormat
+  }
+  export type Input = ToolDefinition | Fields | FreeformInput
 
   /** Normalize tool definition input into the canonical `ToolDefinition` class. */
-  export const make = (input: Input) => (input instanceof ToolDefinition ? input : new ToolDefinition(input))
+  export const make = (input: Input) => {
+    if (input instanceof ToolDefinition) return input
+    if (input.inputFormat && input.inputSchema === undefined)
+      return new ToolDefinition({ ...input, inputSchema: freeformInputSchema })
+    return new ToolDefinition(input as Fields)
+  }
 }
 
 export class ToolChoice extends Schema.Class<ToolChoice>("LLM.ToolChoice")({

@@ -140,6 +140,30 @@ describe("llm constructors", () => {
     expect(ToolChoice.make(tool)).toEqual(new ToolChoice({ type: "tool", name: "lookup" }))
   })
 
+  test("builds freeform tools with a text function fallback", () => {
+    const tool = ToolDefinition.make({
+      name: "apply_patch",
+      description: "Apply a patch",
+      inputFormat: {
+        type: "grammar",
+        syntax: "lark",
+        definition: 'start: "*** Begin Patch" LF',
+      },
+    })
+
+    expect(tool.inputSchema).toEqual({
+      type: "object",
+      properties: { text: { type: "string" } },
+      required: ["text"],
+      additionalProperties: false,
+    })
+    expect(tool.inputFormat).toEqual({
+      type: "grammar",
+      syntax: "lark",
+      definition: 'start: "*** Begin Patch" LF',
+    })
+  })
+
   test("builds tool choice modes from reserved strings", () => {
     expect(ToolChoice.make("auto")).toEqual(new ToolChoice({ type: "auto" }))
     expect(ToolChoice.make("none")).toEqual(new ToolChoice({ type: "none" }))

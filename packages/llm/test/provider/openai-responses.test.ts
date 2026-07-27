@@ -132,6 +132,52 @@ describe("OpenAI Responses route", () => {
     }),
   )
 
+  it.effect("prepares text and Lark custom tools", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.updateRequest(request, {
+          tools: [
+            {
+              name: "code_mode",
+              description: "Execute code",
+              inputFormat: { type: "text" },
+            },
+            {
+              name: "apply_patch",
+              description: "Apply a patch",
+              inputFormat: {
+                type: "grammar",
+                syntax: "lark",
+                definition: 'start: "*** Begin Patch" LF',
+              },
+            },
+          ],
+          toolChoice: "apply_patch",
+        }),
+      )
+
+      expect(prepared.body.tools).toEqual([
+        {
+          type: "custom",
+          name: "code_mode",
+          description: "Execute code",
+          format: { type: "text" },
+        },
+        {
+          type: "custom",
+          name: "apply_patch",
+          description: "Apply a patch",
+          format: {
+            type: "grammar",
+            syntax: "lark",
+            definition: 'start: "*** Begin Patch" LF',
+          },
+        },
+      ])
+      expect(prepared.body.tool_choice).toEqual({ type: "custom", name: "apply_patch" })
+    }),
+  )
+
   it.effect("lowers chronological system updates to escaped user wrappers in order", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
@@ -365,6 +411,48 @@ describe("OpenAI Responses route", () => {
         tools: undefined,
         top_p: undefined,
       })
+    }),
+  )
+
+  it.effect("replays custom tool calls and outputs", () =>
+    Effect.gen(function* () {
+      const providerMetadata = { openai: { itemId: "ctc_1", itemType: "custom_tool_call" } }
+      const prepared = yield* LLMClient.prepare<OpenAIResponses.OpenAIResponsesBody>(
+        LLM.request({
+          model,
+          messages: [
+            Message.assistant([
+              ToolCallPart.make({
+                id: "call_1",
+                name: "apply_patch",
+                input: { text: "*** Begin Patch\n*** End Patch" },
+                providerMetadata,
+              }),
+            ]),
+            Message.tool({
+              id: "call_1",
+              name: "apply_patch",
+              result: "Done!",
+              resultType: "text",
+              providerMetadata,
+            }),
+          ],
+        }),
+      )
+
+      expect(prepared.body.input).toEqual([
+        {
+          type: "custom_tool_call",
+          call_id: "call_1",
+          name: "apply_patch",
+          input: "*** Begin Patch\n*** End Patch",
+        },
+        {
+          type: "custom_tool_call_output",
+          call_id: "call_1",
+          output: "Done!",
+        },
+      ])
     }),
   )
 
@@ -1216,6 +1304,39 @@ describe("OpenAI Responses route", () => {
           providerMetadata: undefined,
           usage,
         },
+      ])
+    }),
+  )
+
+  it.effect("assembles streamed custom tool input as canonical text", () =>
+    Effect.gen(function* () {
+      const patch = "*** Begin Patch\n*** End Patch"
+      const body = sseEvents(
+        {
+          type: "response.output_item.added",
+          item: { type: "custom_tool_call", id: "ctc_1", call_id: "call_1", name: "apply_patch", input: "" },
+        },
+        { type: "response.custom_tool_call_input.delta", item_id: "ctc_1", delta: "*** Begin Patch\n" },
+        { type: "response.custom_tool_call_input.delta", item_id: "ctc_1", delta: "*** End Patch" },
+        {
+          type: "response.output_item.done",
+          item: { type: "custom_tool_call", id: "ctc_1", call_id: "call_1", name: "apply_patch", input: patch },
+        },
+        { type: "response.completed", response: { usage: { input_tokens: 5, output_tokens: 1 } } },
+      )
+      const response = yield* LLMClient.generate(request).pipe(Effect.provide(fixedResponse(body)))
+
+      expect(response.events.find((event) => event.type === "tool-call")).toEqual({
+        type: "tool-call",
+        id: "call_1",
+        name: "apply_patch",
+        input: { text: patch },
+        providerExecuted: undefined,
+        providerMetadata: { openai: { itemId: "ctc_1", itemType: "custom_tool_call" } },
+      })
+      expect(response.events.filter((event) => event.type === "tool-input-delta").map((event) => event.text)).toEqual([
+        "*** Begin Patch\n",
+        "*** End Patch",
       ])
     }),
   )

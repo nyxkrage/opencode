@@ -326,6 +326,14 @@ describe("LLMClient tools", () => {
       const [dynamic] = toDefinitions({
         dynamic: Tool.make({ description: "Dynamic tool.", jsonSchema: { type: "object" }, outputSchema: schema }),
       })
+      const [freeform] = toDefinitions({
+        freeform: Tool.make({
+          description: "Freeform tool.",
+          parameters: Schema.Struct({ text: Schema.String }),
+          inputFormat: { type: "text" },
+          success: Schema.String,
+        }),
+      })
 
       expect(typed?.outputSchema).toMatchObject({
         type: "object",
@@ -335,6 +343,7 @@ describe("LLMClient tools", () => {
       })
       expect(Reflect.get(Reflect.get(typed?.outputSchema ?? {}, "properties") as object, "temperature")).toBeDefined()
       expect(dynamic?.outputSchema).toEqual(schema)
+      expect(freeform?.inputFormat).toEqual({ type: "text" })
     }),
   )
 
