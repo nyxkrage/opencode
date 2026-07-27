@@ -35,6 +35,7 @@ import { SessionRunCoordinator } from "@opencode-ai/core/session/run-coordinator
 import { SessionRunner } from "@opencode-ai/core/session/runner"
 import * as SessionRunnerLLM from "@opencode-ai/core/session/runner/llm"
 import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
+import { SessionHooks } from "@opencode-ai/core/session/hooks"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { ToolHooks } from "@opencode-ai/core/tool/hooks"
 import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
@@ -262,6 +263,7 @@ const it = testEffect(
       SessionStore.node,
       ApplicationTools.node,
       AgentV2.node,
+      SessionHooks.node,
       ToolHooks.node,
       ToolRegistry.node,
       ToolRegistry.toolsNode,
@@ -675,6 +677,42 @@ describe("SessionRunnerLLM", () => {
 
       expect(models).toEqual([{ providerID: "fake", id: "fake-model" }])
       expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["defect", "renamed_echo"])
+    }),
+  )
+
+  it.effect("materializes a model-specific system prompt before the provider request", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const { db } = yield* Database.Service
+      const session = yield* SessionV2.Service
+      const hooks = yield* SessionHooks.Service
+      const models: SessionHooks.Model[] = []
+      yield* db
+        .update(SessionTable)
+        .set({ model: { providerID: "fake", id: "fake-model", variant: "codex" } })
+        .where(eq(SessionTable.id, sessionID))
+        .run()
+        .pipe(Effect.orDie)
+      yield* hooks.hook.systemMaterialize(({ model, system }) => {
+        models.push(model)
+        if (model.providerID !== "fake" || model.variant !== "codex") return
+        expect(system.list()).toEqual(["Initial context"])
+        system.replace(["Codex instructions"])
+        system.prepend("Provider preface")
+        system.append("Repository instructions")
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Use the system prompt" }), resume: false })
+
+      requests.length = 0
+      response = []
+      yield* session.resume(sessionID)
+
+      expect(models).toEqual([{ providerID: "fake", id: "fake-model", variant: "codex" }])
+      expect(requests[0]?.system.map((part) => part.text)).toEqual([
+        "Provider preface",
+        "Codex instructions",
+        "Repository instructions",
+      ])
     }),
   )
 

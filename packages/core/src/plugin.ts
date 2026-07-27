@@ -13,6 +13,7 @@ import { Integration } from "./integration"
 import { KeyedMutex } from "./effect/keyed-mutex"
 import { PluginHost } from "./plugin/host"
 import { Reference } from "./reference"
+import { SessionHooks } from "./session/hooks"
 import { SkillV2 } from "./skill"
 import { State } from "./state"
 import { ToolHooks } from "./tool/hooks"
@@ -150,6 +151,7 @@ export const locationLayer = layer.pipe(
   Layer.provideMerge(CommandV2.locationLayer),
   Layer.provideMerge(Integration.locationLayer),
   Layer.provideMerge(Reference.locationLayer),
+  Layer.provideMerge(SessionHooks.layer),
   Layer.provideMerge(ToolHooks.layer),
 )
 
@@ -164,6 +166,7 @@ export const node = makeLocationNode({
     CommandV2.node,
     Integration.node,
     Reference.node,
+    SessionHooks.node,
     SkillV2.node,
     ToolHooks.node,
   ],

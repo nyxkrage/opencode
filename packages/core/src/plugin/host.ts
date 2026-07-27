@@ -13,6 +13,7 @@ import { PluginV2 } from "../plugin"
 import { ProviderV2 } from "../provider"
 import { Reference } from "../reference"
 import type { DeepMutable } from "../schema"
+import { SessionHooks } from "../session/hooks"
 import { SkillV2 } from "../skill"
 import { ToolHooks } from "../tool/hooks"
 
@@ -25,6 +26,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
   const commands = yield* CommandV2.Service
   const integration = yield* Integration.Service
   const reference = yield* Reference.Service
+  const session = yield* SessionHooks.Service
   const skill = yield* SkillV2.Service
   const tool = yield* ToolHooks.Service
 
@@ -206,6 +208,12 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
             list: draft.list,
           }),
         ),
+    },
+    session: {
+      hook: (name, callback) => {
+        if (name === "system.materialize") return session.hook.systemMaterialize(callback)
+        return Effect.die(`Unknown session hook: ${String(name)}`)
+      },
     },
     skill: {
       reload: skill.reload,

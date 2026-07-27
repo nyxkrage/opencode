@@ -3,6 +3,7 @@ import { Effect, Exit, Fiber, Schema } from "effect"
 import { define } from "@opencode-ai/plugin/v2/effect"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { PluginV2 } from "@opencode-ai/core/plugin"
+import { SessionHooks } from "@opencode-ai/core/session/hooks"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { Tool } from "@opencode-ai/core/tool/tool"
 import { testEffect } from "./lib/effect"
@@ -102,6 +103,42 @@ describe("PluginV2", () => {
       expect(
         (yield* tools.materialize([], { providerID: "openai", id: "gpt-5.4" })).definitions.map((tool) => tool.name),
       ).toEqual(["shell"])
+    }),
+  )
+
+  it.effect("scopes system materialization hooks to the plugin", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginV2.Service
+      const hooks = yield* SessionHooks.Service
+      const materialize = () =>
+        Effect.gen(function* () {
+          const state = { parts: ["Base instructions"] }
+          yield* hooks.materializeSystem({
+            model: { providerID: "openai", id: "gpt-5.4" },
+            system: {
+              list: () => [...state.parts],
+              replace: (parts) => (state.parts = [...parts]),
+              prepend: (part) => (state.parts = [part, ...state.parts]),
+              append: (part) => (state.parts = [...state.parts, part]),
+            },
+          })
+          return state.parts
+        })
+      const managed = define({
+        id: "system-policy",
+        effect: (ctx) =>
+          ctx.session
+            .hook("system.materialize", ({ model, system }) => {
+              if (model.providerID === "openai") system.replace(["Codex instructions"])
+            })
+            .pipe(Effect.asVoid),
+      })
+
+      yield* plugins.add(PluginV2.ID.make(managed.id), managed.effect)
+      expect(yield* materialize()).toEqual(["Codex instructions"])
+
+      yield* plugins.remove(PluginV2.ID.make(managed.id))
+      expect(yield* materialize()).toEqual(["Base instructions"])
     }),
   )
 })

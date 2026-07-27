@@ -25,6 +25,7 @@ import { QuestionV2 } from "./question"
 import { Reference } from "./reference"
 import { ReferenceGuidance } from "./reference/guidance"
 import * as SessionRunnerLLM from "./session/runner/llm"
+import { SessionHooks } from "./session/hooks"
 import { SessionRunnerModel } from "./session/runner/model"
 import { SessionTodo } from "./session/todo"
 import { SkillV2 } from "./skill"
@@ -59,6 +60,7 @@ export const locationServices = LayerNode.group([
   Watcher.node,
   Pty.node,
   SkillV2.node,
+  SessionHooks.node,
   SystemContextRegistry.node,
   SystemContextBuiltIns.node,
   LocationMutation.node,

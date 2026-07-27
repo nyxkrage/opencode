@@ -81,6 +81,10 @@ export function fromPromise(plugin: Plugin) {
             transform: transform(host.reference),
             reload: () => run(host.reference.reload()),
           },
+          session: {
+            hook: (name, callback) =>
+              register(host.session.hook(name, (event) => Effect.promise(() => Promise.resolve(callback(event))))),
+          },
           skill: {
             transform: transform(host.skill),
             reload: () => run(host.skill.reload()),

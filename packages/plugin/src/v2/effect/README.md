@@ -96,6 +96,21 @@ yield *
 Removing or renaming a tool only changes that provider turn's advertised catalog. Renamed tools retain their
 canonical implementation and permission action. Renaming to an existing tool name fails the materialization.
 
+Session system materialization hooks can replace or extend the system prompt for one resolved model:
+
+```ts
+yield *
+  ctx.session.hook("system.materialize", ({ model, system }) => {
+    if (model.providerID !== "openai" || model.id !== "gpt-5.4") return
+    system.replace(["You are OpenAI Codex.", "Use apply_patch for file edits."])
+    system.append("Follow the repository instructions.")
+  })
+```
+
+The hook runs for every provider turn after durable system context is prepared and the model is resolved. Its
+changes are ephemeral: they affect request construction and compaction accounting without changing durable
+session history or context snapshots.
+
 ## Reloading A Domain
 
 When data captured by a transform changes, reload the affected domain:

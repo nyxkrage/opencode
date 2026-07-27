@@ -1,4 +1,5 @@
 export type { PluginContext } from "./context.js"
 export { define } from "./plugin.js"
 export type { Plugin } from "./plugin.js"
+export type { SessionDomain, SessionHookSpec, SessionSystemDraft, SessionSystemMaterializeModel } from "./session.js"
 export type { ToolDomain, ToolHookSpec, ToolMaterializeDraft, ToolMaterializeModel } from "./tool.js"

@@ -4,6 +4,7 @@ import { AgentV2 } from "@opencode-ai/core/agent"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 import { PluginHost } from "@opencode-ai/core/plugin/host"
 import { PluginPromise } from "@opencode-ai/core/plugin/promise"
+import { SessionHooks } from "@opencode-ai/core/session/hooks"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { Tool } from "@opencode-ai/core/tool/tool"
 import { define } from "@opencode-ai/plugin/v2/promise"
@@ -94,6 +95,36 @@ describe("fromPromise", () => {
       expect(
         (yield* tools.materialize([], { providerID: "openai", id: "gpt-5.4" })).definitions.map((tool) => tool.name),
       ).toEqual(["exec"])
+    }),
+  )
+
+  it.effect("adapts system materialization hooks", () =>
+    Effect.gen(function* () {
+      const plugin = yield* PluginV2.Service
+      const hooks = yield* SessionHooks.Service
+      const host = yield* PluginHost.make(plugin)
+      const promisePlugin = define({
+        id: "promise-system",
+        setup: async (ctx) => {
+          await ctx.session.hook("system.materialize", ({ model, system }) => {
+            if (model.variant === "codex") system.append("Codex instructions")
+          })
+        },
+      })
+
+      yield* PluginPromise.fromPromise(promisePlugin).effect(host)
+      const state = { parts: ["Base instructions"] }
+      yield* hooks.materializeSystem({
+        model: { providerID: "openai", id: "gpt-5.4", variant: "codex" },
+        system: {
+          list: () => [...state.parts],
+          replace: (parts) => (state.parts = [...parts]),
+          prepend: (part) => (state.parts = [part, ...state.parts]),
+          append: (part) => (state.parts = [...state.parts, part]),
+        },
+      })
+
+      expect(state.parts).toEqual(["Base instructions", "Codex instructions"])
     }),
   )
 })

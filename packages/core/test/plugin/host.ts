@@ -45,6 +45,9 @@ export function host(overrides: Overrides = {}): PluginContext {
       transform: () => Effect.die("unused reference.transform"),
       reload: () => Effect.die("unused reference.reload"),
     },
+    session: overrides.session ?? {
+      hook: () => Effect.die("unused session.hook"),
+    },
     skill: overrides.skill ?? {
       transform: () => Effect.die("unused skill.transform"),
       reload: () => Effect.die("unused skill.reload"),

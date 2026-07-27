@@ -28,6 +28,7 @@ import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
+import { SessionHooks } from "../hooks"
 import { SessionInput } from "../input"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
@@ -96,6 +97,7 @@ const layer = Layer.effect(
     const events = yield* EventV2.Service
     const llm = yield* LLMClient.Service
     const agents = yield* AgentV2.Service
+    const sessionHooks = yield* SessionHooks.Service
     const tools = yield* ToolRegistry.Service
     const models = yield* SessionRunnerModel.Service
     const store = yield* SessionStore.Service
@@ -200,20 +202,31 @@ const layer = Layer.effect(
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
-      const toolMaterialization = isLastStep
-        ? undefined
-        : yield* tools.materialize(agent.info?.permissions, {
-            providerID: model.provider,
-            id: model.id,
-            ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
-          })
+      const hookModel = {
+        providerID: model.provider,
+        id: model.id,
+        ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+      }
+      const materializedSystem = {
+        parts: [agent.info?.system, system.baseline].filter(
+          (part): part is string => part !== undefined && part.length > 0,
+        ),
+      }
+      yield* sessionHooks.materializeSystem({
+        model: hookModel,
+        system: {
+          list: () => [...materializedSystem.parts],
+          replace: (parts) => (materializedSystem.parts = [...parts]),
+          prepend: (part) => (materializedSystem.parts = [part, ...materializedSystem.parts]),
+          append: (part) => (materializedSystem.parts = [...materializedSystem.parts, part]),
+        },
+      })
+      const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions, hookModel)
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       const request = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
-        system: [agent.info?.system, system.baseline]
-          .filter((part): part is string => part !== undefined && part.length > 0)
-          .map(SystemPart.make),
+        system: materializedSystem.parts.filter((part) => part.length > 0).map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
@@ -424,6 +437,7 @@ export const node = makeLocationNode({
     EventV2.node,
     llmClient,
     AgentV2.node,
+    SessionHooks.node,
     ToolRegistry.node,
     SessionRunnerModel.node,
     SessionStore.node,
