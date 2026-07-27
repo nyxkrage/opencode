@@ -114,10 +114,10 @@ const withTool = <A, E, R>(directory: string, body: (registry: ToolRegistry.Inte
   )
 }
 
-const call = (patchText: string, id = "call-apply-patch") => ({
+const call = (text: string, id = "call-apply-patch") => ({
   sessionID,
   ...toolIdentity,
-  call: { type: "tool-call" as const, id, name: "apply_patch", input: { patchText } },
+  call: { type: "tool-call" as const, id, name: "apply_patch", input: { text } },
 })
 
 const exists = (target: string) =>
@@ -143,7 +143,24 @@ describe("ApplyPatchTool", () => {
           Effect.andThen(
             withTool(tmp.path, (registry) =>
               Effect.gen(function* () {
-                expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["apply_patch"])
+                expect(yield* toolDefinitions(registry)).toMatchObject([
+                  {
+                    name: "apply_patch",
+                    description:
+                      "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
+                    inputSchema: {
+                      type: "object",
+                      properties: { text: { type: "string" } },
+                      required: ["text"],
+                      additionalProperties: false,
+                    },
+                    inputFormat: {
+                      type: "grammar",
+                      syntax: "lark",
+                      definition: ApplyPatchTool.grammar,
+                    },
+                  },
+                ])
                 const settled = yield* settleTool(
                   registry,
                   call(

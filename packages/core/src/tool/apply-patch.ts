@@ -16,8 +16,30 @@ import { Tools } from "./tools"
 
 export const name = "apply_patch"
 
+// Keep this byte-for-byte aligned with codex-rs/core/src/tools/handlers/apply_patch.lark.
+export const grammar = `start: begin_patch hunk+ end_patch
+begin_patch: "*** Begin Patch" LF
+end_patch: "*** End Patch" LF?
+
+hunk: add_hunk | delete_hunk | update_hunk
+add_hunk: "*** Add File: " filename LF add_line+
+delete_hunk: "*** Delete File: " filename LF
+update_hunk: "*** Update File: " filename LF change_move? change?
+
+filename: /(.+)/
+add_line: "+" /(.*)/ LF -> line
+
+change_move: "*** Move to: " filename LF
+change: (change_context | change_line)+ eof_line?
+change_context: ("@@" | "@@ " /(.+)/) LF
+change_line: ("+" | "-" | " ") /(.*)/ LF
+eof_line: "*** End of File" LF
+
+%import common.LF
+`
+
 export const Input = Schema.Struct({
-  patchText: Schema.String.annotate({
+  text: Schema.String.annotate({
     description: "The full patch text describing add, update, and delete operations",
   }),
 })
@@ -69,8 +91,13 @@ const layer = Layer.effectDiscard(
         [name]: Tool.withPermission(
           Tool.make({
             description:
-              "Apply one patch containing add, update, and delete file operations. All targets are resolved and approved before target contents are read. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.",
+              "Use the `apply_patch` tool to edit files. This is a FREEFORM tool, so do not wrap the patch in JSON.",
             input: Input,
+            inputFormat: {
+              type: "grammar",
+              syntax: "lark",
+              definition: grammar,
+            },
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
             execute: (input, context) => {
@@ -88,9 +115,9 @@ const layer = Layer.effectDiscard(
                   messageID: context.assistantMessageID,
                   callID: context.toolCallID,
                 }
-                if (!input.patchText.trim()) return yield* new ToolFailure({ message: "patchText is required" })
+                if (!input.text.trim()) return yield* new ToolFailure({ message: "text is required" })
                 const hunks = yield* Effect.try({
-                  try: () => Patch.parse(input.patchText),
+                  try: () => Patch.parse(input.text),
                   catch: (cause) => new ToolFailure({ message: `apply_patch verification failed: ${String(cause)}` }),
                 })
                 if (hunks.length === 0) return yield* new ToolFailure({ message: "patch rejected: empty patch" })
