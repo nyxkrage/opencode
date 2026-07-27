@@ -200,7 +200,13 @@ const layer = Layer.effect(
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
-      const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)
+      const toolMaterialization = isLastStep
+        ? undefined
+        : yield* tools.materialize(agent.info?.permissions, {
+            providerID: model.provider,
+            id: model.id,
+            ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+          })
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       const request = LLM.request({
         model,

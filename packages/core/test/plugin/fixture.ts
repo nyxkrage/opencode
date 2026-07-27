@@ -15,6 +15,9 @@ import { Npm } from "@opencode-ai/core/npm"
 import { PluginV2 } from "@opencode-ai/core/plugin"
 import { Reference } from "@opencode-ai/core/reference"
 import { SkillV2 } from "@opencode-ai/core/skill"
+import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
+import { ToolHooks } from "@opencode-ai/core/tool/hooks"
+import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { Effect, Layer } from "effect"
 import { tempLocationLayer } from "../fixture/location"
 
@@ -26,6 +29,10 @@ const npmLayer = Layer.succeed(
     which: () => Effect.succeed(undefined),
   }),
 )
+
+const toolOutputStore = Layer.mock(ToolOutputStore.Service, {
+  bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
+})
 
 export const PluginTestLayer = AppNodeBuilder.build(
   LayerNode.group([
@@ -44,9 +51,12 @@ export const PluginTestLayer = AppNodeBuilder.build(
     Integration.node,
     Reference.node,
     SkillV2.node,
+    ToolHooks.node,
+    ToolRegistry.node,
   ]),
   [
     [Location.node, tempLocationLayer],
     [Npm.node, npmLayer],
+    [ToolOutputStore.node, toolOutputStore],
   ],
 )

@@ -7,6 +7,7 @@ import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
 import { SessionV2 } from "@opencode-ai/core/session"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { ToolOutputStore } from "@opencode-ai/core/tool-output-store"
+import { ToolHooks } from "@opencode-ai/core/tool/hooks"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
 import { executeTool, settleTool, toolDefinitions } from "./lib/tool"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, SchemaGetter, SchemaIssue, Scope } from "effect"
@@ -29,10 +30,12 @@ const outputStore = Layer.mock(ToolOutputStore.Service, {
     )
   },
 })
-const registryLayer = AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore]])
+const registryLayer = AppNodeBuilder.build(LayerNode.group([ToolHooks.node, ToolRegistry.node]), [
+  [ToolOutputStore.node, outputStore],
+])
 const it = testEffect(registryLayer)
 const integrated = testEffect(
-  AppNodeBuilder.build(LayerNode.group([ApplicationTools.node, ToolRegistry.node]), [
+  AppNodeBuilder.build(LayerNode.group([ApplicationTools.node, ToolHooks.node, ToolRegistry.node]), [
     [ToolOutputStore.node, outputStore],
   ]),
 )
@@ -150,6 +153,51 @@ describe("ToolRegistry", () => {
         required: ["text"],
         additionalProperties: false,
       })
+    }),
+  )
+
+  it.effect("applies model-specific removal and aliases without changing canonical permissions", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      const hooks = yield* ToolHooks.Service
+      yield* service.register({
+        hidden: make(),
+        shell: make("bash"),
+      })
+      yield* hooks.hook.materialize(({ model, tools }) => {
+        if (model.providerID !== "openai" || model.id !== "gpt-5.4") return
+        tools.remove("hidden")
+        if (tools.list().includes("shell")) tools.rename("shell", "exec")
+      })
+
+      const other = yield* service.materialize([], { providerID: "anthropic", id: "claude-opus-4-1" })
+      expect(other.definitions.map((tool) => tool.name)).toEqual(["hidden", "shell"])
+
+      const target = yield* service.materialize([], { providerID: "openai", id: "gpt-5.4" })
+      expect(target.definitions.map((tool) => tool.name)).toEqual(["exec"])
+      expect((yield* target.settle(call("exec"))).result).toEqual({ type: "text", value: "exec" })
+      expect((yield* target.settle(call("shell"))).result).toEqual({ type: "error", value: "Unknown tool: shell" })
+
+      const denied = yield* service.materialize([{ action: "bash", resource: "*", effect: "deny" }], {
+        providerID: "openai",
+        id: "gpt-5.4",
+      })
+      expect(denied.definitions).toEqual([])
+    }),
+  )
+
+  it.effect("rejects alias collisions during model-specific materialization", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      const hooks = yield* ToolHooks.Service
+      yield* service.register({ first: make(), second: make() })
+      yield* hooks.hook.materialize(({ tools }) => tools.rename("first", "second"))
+
+      expect(
+        yield* service
+          .materialize([], { providerID: "openai", id: "gpt-5.4" })
+          .pipe(Effect.catchDefect(Effect.succeed)),
+      ).toEqual(new Error("Cannot rename tool first to existing tool: second"))
     }),
   )
 
@@ -386,6 +434,23 @@ describe("ToolRegistry", () => {
       expect((yield* materialized.settle(call("echo"))).result).toEqual({
         type: "error",
         value: "Stale tool call: echo",
+      })
+    }),
+  )
+
+  it.effect("rejects an aliased call when its canonical registration was removed", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      const hooks = yield* ToolHooks.Service
+      const scope = yield* Scope.make()
+      yield* service.register({ shell: make() }).pipe(Scope.provide(scope))
+      yield* hooks.hook.materialize(({ tools }) => tools.rename("shell", "exec"))
+      const materialized = yield* service.materialize([], { providerID: "openai", id: "gpt-5.4" })
+      yield* Scope.close(scope, Exit.void)
+
+      expect((yield* materialized.settle(call("exec"))).result).toEqual({
+        type: "error",
+        value: "Stale tool call: exec",
       })
     }),
   )

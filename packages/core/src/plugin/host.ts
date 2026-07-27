@@ -14,6 +14,7 @@ import { ProviderV2 } from "../provider"
 import { Reference } from "../reference"
 import type { DeepMutable } from "../schema"
 import { SkillV2 } from "../skill"
+import { ToolHooks } from "../tool/hooks"
 
 const mutable = <T>(value: T) => value as DeepMutable<T>
 
@@ -25,6 +26,7 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
   const integration = yield* Integration.Service
   const reference = yield* Reference.Service
   const skill = yield* SkillV2.Service
+  const tool = yield* ToolHooks.Service
 
   return {
     options: {},
@@ -214,6 +216,12 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
             list: draft.list,
           }),
         ),
+    },
+    tool: {
+      hook: (name, callback) => {
+        if (name === "materialize") return tool.hook.materialize(callback)
+        return Effect.die(`Unknown tool hook: ${String(name)}`)
+      },
     },
   } satisfies Interface
 })

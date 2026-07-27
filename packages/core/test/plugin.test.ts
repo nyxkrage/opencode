@@ -1,8 +1,10 @@
 import { describe, expect } from "bun:test"
-import { Effect, Exit, Fiber } from "effect"
+import { Effect, Exit, Fiber, Schema } from "effect"
 import { define } from "@opencode-ai/plugin/v2/effect"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { PluginV2 } from "@opencode-ai/core/plugin"
+import { ToolRegistry } from "@opencode-ai/core/tool/registry"
+import { Tool } from "@opencode-ai/core/tool/tool"
 import { testEffect } from "./lib/effect"
 import { PluginTestLayer } from "./plugin/fixture"
 
@@ -66,6 +68,40 @@ describe("PluginV2", () => {
 
       yield* plugins.remove(PluginV2.ID.make("managed"))
       expect(yield* agents.get(AgentV2.ID.make("configured"))).toBeUndefined()
+    }),
+  )
+
+  it.effect("scopes model-specific tool materialization hooks to the plugin", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginV2.Service
+      const tools = yield* ToolRegistry.Service
+      yield* tools.register({
+        shell: Tool.make({
+          description: "Run a shell command",
+          input: Schema.Struct({ text: Schema.String }),
+          output: Schema.String,
+          execute: ({ text }) => Effect.succeed(text),
+        }),
+      })
+      const managed = define({
+        id: "tool-policy",
+        effect: (ctx) =>
+          ctx.tool
+            .hook("materialize", ({ model, tools }) => {
+              if (model.providerID === "openai" && model.id === "gpt-5.4") tools.rename("shell", "exec")
+            })
+            .pipe(Effect.asVoid),
+      })
+
+      yield* plugins.add(PluginV2.ID.make(managed.id), managed.effect)
+      expect(
+        (yield* tools.materialize([], { providerID: "openai", id: "gpt-5.4" })).definitions.map((tool) => tool.name),
+      ).toEqual(["exec"])
+
+      yield* plugins.remove(PluginV2.ID.make(managed.id))
+      expect(
+        (yield* tools.materialize([], { providerID: "openai", id: "gpt-5.4" })).definitions.map((tool) => tool.name),
+      ).toEqual(["shell"])
     }),
   )
 })

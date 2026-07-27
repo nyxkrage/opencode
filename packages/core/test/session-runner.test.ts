@@ -36,6 +36,7 @@ import { SessionRunner } from "@opencode-ai/core/session/runner"
 import * as SessionRunnerLLM from "@opencode-ai/core/session/runner/llm"
 import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
 import { ToolRegistry } from "@opencode-ai/core/tool/registry"
+import { ToolHooks } from "@opencode-ai/core/tool/hooks"
 import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
 import { AgentV2 } from "@opencode-ai/core/agent"
 import { Config } from "@opencode-ai/core/config"
@@ -261,6 +262,7 @@ const it = testEffect(
       SessionStore.node,
       ApplicationTools.node,
       AgentV2.node,
+      ToolHooks.node,
       ToolRegistry.node,
       ToolRegistry.toolsNode,
       echoNode,
@@ -652,6 +654,27 @@ describe("SessionRunnerLLM", () => {
         { role: "user", content: [{ type: "text", text: "Second" }] },
       ])
       expect(yield* session.messages({ sessionID })).toHaveLength(2)
+    }),
+  )
+
+  it.effect("passes the resolved model to tool materialization hooks", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const hooks = yield* ToolHooks.Service
+      const models: ToolHooks.Model[] = []
+      yield* hooks.hook.materialize(({ model, tools }) => {
+        models.push(model)
+        tools.rename("echo", "renamed_echo")
+      })
+      yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Use renamed tools" }), resume: false })
+
+      requests.length = 0
+      response = []
+      yield* session.resume(sessionID)
+
+      expect(models).toEqual([{ providerID: "fake", id: "fake-model" }])
+      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["defect", "renamed_echo"])
     }),
   )
 

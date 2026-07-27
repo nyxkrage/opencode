@@ -81,6 +81,21 @@ yield *
 
 Hooks run sequentially in registration order. Later hooks observe mutations made by earlier hooks.
 
+Tool materialization hooks can adjust the names exposed for one resolved model:
+
+```ts
+yield *
+  ctx.tool.hook("materialize", ({ model, tools }) => {
+    if (model.providerID !== "openai" || model.id !== "gpt-5.4") return
+    tools.remove("edit")
+    tools.remove("write")
+    tools.rename("bash", "exec")
+  })
+```
+
+Removing or renaming a tool only changes that provider turn's advertised catalog. Renamed tools retain their
+canonical implementation and permission action. Renaming to an existing tool name fails the materialization.
+
 ## Reloading A Domain
 
 When data captured by a transform changes, reload the affected domain:
