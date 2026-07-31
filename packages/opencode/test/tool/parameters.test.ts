@@ -92,16 +92,16 @@ describe("tool parameters", () => {
   })
 
   describe("apply_patch", () => {
-    test("accepts patchText", () => {
-      expect(parse(ApplyPatch, { patchText: "*** Begin Patch\n*** End Patch" })).toEqual({
-        patchText: "*** Begin Patch\n*** End Patch",
+    test("accepts text", () => {
+      expect(parse(ApplyPatch, { text: "*** Begin Patch\n*** End Patch" })).toEqual({
+        text: "*** Begin Patch\n*** End Patch",
       })
     })
-    test("rejects missing patchText", () => {
+    test("rejects missing text", () => {
       expect(accepts(ApplyPatch, {})).toBe(false)
     })
-    test("rejects non-string patchText", () => {
-      expect(accepts(ApplyPatch, { patchText: 123 })).toBe(false)
+    test("rejects non-string text", () => {
+      expect(accepts(ApplyPatch, { text: 123 })).toBe(false)
     })
   })
 

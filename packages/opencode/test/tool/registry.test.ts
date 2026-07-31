@@ -50,6 +50,26 @@ const brokenPluginLayer = Layer.succeed(
   }),
 )
 
+const materializePluginLayer = Layer.succeed(
+  Plugin.Service,
+  Plugin.Service.of({
+    init: () => Effect.void,
+    trigger: ((name: string, _input: unknown, output: unknown) => {
+      if (name !== "tool.materialize") return Effect.succeed(output)
+      const result = output as {
+        tools: Array<{ readonly id: string; name: string; enabled: boolean }>
+      }
+      result.tools.forEach((tool) => {
+        if (tool.id === "apply_patch") tool.enabled = true
+        if (tool.id === "edit" || tool.id === "write") tool.enabled = false
+        if (tool.id === "bash") tool.name = "exec_command"
+      })
+      return Effect.succeed(output)
+    }) as Plugin.Interface["trigger"],
+    list: () => Effect.succeed([]),
+  }),
+)
+
 const root = LayerNode.group([ToolRegistry.node, Agent.node])
 const replacements = [
   [Config.node, configLayer],
@@ -94,6 +114,9 @@ const withEmptyCodeMode = testEffect(
   ]),
 )
 const withBrokenPlugin = testEffect(LayerNode.compile(root, [...replacements, [Plugin.node, brokenPluginLayer]]))
+const withMaterializePlugin = testEffect(
+  LayerNode.compile(root, [...replacements, [Plugin.node, materializePluginLayer]]),
+)
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -115,6 +138,25 @@ describe("tool.registry", () => {
       const ids = yield* registry.ids()
 
       expect(ids).not.toContain("execute")
+    }),
+  )
+
+  withMaterializePlugin.instance("lets plugins enable, remove, and rename tools per model", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const agents = yield* Agent.Service
+      const tools = yield* registry.tools({
+        providerID: ProviderV2.ID.make("opencode-go"),
+        modelID: ModelV2.ID.make("kimi-k3"),
+        agent: yield* agents.defaultInfo(),
+      })
+      const names = tools.map((tool) => tool.id)
+
+      expect(names).toContain("apply_patch")
+      expect(names).toContain("exec_command")
+      expect(names).not.toContain("bash")
+      expect(names).not.toContain("edit")
+      expect(names).not.toContain("write")
     }),
   )
 

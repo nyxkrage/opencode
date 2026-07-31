@@ -430,7 +430,7 @@ describe("run entry body", () => {
           state: {
             status: "completed",
             input: {
-              patchText: "*** Begin Patch\n*** End Patch",
+              text: "*** Begin Patch\n*** End Patch",
             },
             output: "",
             title: "",
@@ -462,7 +462,7 @@ describe("run entry body", () => {
           state: {
             status: "completed",
             input: {
-              patchText: "*** Begin Patch\n*** End Patch",
+              text: "*** Begin Patch\n*** End Patch",
             },
             output: "",
             title: "",

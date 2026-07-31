@@ -216,6 +216,12 @@ export type ProviderHook = {
   models?: (provider: ProviderV2, ctx: ProviderHookContext) => Promise<Record<string, ModelV2>>
 }
 
+export type ToolMaterializeItem = {
+  readonly id: string
+  name: string
+  enabled: boolean
+}
+
 /** @deprecated Use AuthOAuthResult instead. */
 export type AuthOuathResult = AuthOAuthResult
 
@@ -279,6 +285,15 @@ export interface Hooks {
       metadata: any
     },
   ) => Promise<void>
+  /**
+   * Modify the effective tool list for one model. Set `enabled` to hide or
+   * restore a registered tool, and change `name` to advertise an alias while
+   * preserving the original implementation identified by `id`.
+   */
+  "tool.materialize"?: (
+    input: { model: { providerID: string; modelID: string } },
+    output: { tools: ToolMaterializeItem[] },
+  ) => Promise<void>
   "experimental.chat.messages.transform"?: (
     input: {},
     output: {
@@ -286,6 +301,16 @@ export interface Hooks {
         info: Message
         parts: Part[]
       }[]
+    },
+  ) => Promise<void>
+  /**
+   * Modify the ordered system prompt parts before OpenCode joins them for
+   * provider compatibility.
+   */
+  "experimental.chat.system.materialize"?: (
+    input: { sessionID?: string; model: Model },
+    output: {
+      system: string[]
     },
   ) => Promise<void>
   "experimental.chat.system.transform"?: (

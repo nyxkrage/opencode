@@ -84,7 +84,8 @@ Both runtimes converge on the same `LLMEvent` stream consumed by the session pro
 
 Safety boundary:
 
-- AI SDK remains the default.
-- `OPENCODE_EXPERIMENTAL_NATIVE_LLM=true` or the umbrella `OPENCODE_EXPERIMENTAL=true` opts in. Native is not a global replacement.
+- AI SDK remains the default for ordinary JSON-schema tools.
+- Requests containing a freeform tool select native automatically so Responses providers can receive the tool's native input format. Unsupported native routes fall back to AI SDK and the tool's normalized JSON input schema.
+- `OPENCODE_EXPERIMENTAL_NATIVE_LLM=true` or the umbrella `OPENCODE_EXPERIMENTAL=true` opts other requests in. Native is not a global replacement.
 - Native execution currently supports OpenAI, opencode-managed OpenAI-compatible, and Anthropic API-key paths backed by `@ai-sdk/openai`, `@ai-sdk/openai-compatible`, or `@ai-sdk/anthropic` catalog entries.
-- Unsupported providers, OpenAI OAuth, and missing API-key cases fall back to AI SDK.
+- Unsupported providers, unsupported OAuth flows, and missing API-key cases fall back to AI SDK.

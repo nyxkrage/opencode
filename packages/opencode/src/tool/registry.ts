@@ -284,50 +284,72 @@ const layer = Layer.effect(
     })
 
     const tools: Interface["tools"] = Effect.fn("ToolRegistry.tools")(function* (input) {
-      const filtered = (yield* all()).filter((tool) => {
-        if (tool.id === WebSearchTool.id) {
-          return webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
-        }
+      const registered = yield* all()
+      const usePatch =
+        input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
+      const output = {
+        tools: registered.map((tool) => ({
+          id: tool.id,
+          name: tool.id,
+          enabled:
+            tool.id === WebSearchTool.id
+              ? webSearchEnabled(input.providerID, { exa: flags.enableExa, parallel: flags.enableParallel })
+              : tool.id === ApplyPatchTool.id
+                ? usePatch
+                : tool.id === EditTool.id || tool.id === WriteTool.id
+                  ? !usePatch
+                  : true,
+        })),
+      }
+      yield* plugin.trigger(
+        "tool.materialize",
+        { model: { providerID: input.providerID, modelID: input.modelID } },
+        output,
+      )
+      const byID = new Map(registered.map((tool) => [tool.id, tool]))
+      const materialized = [
+        ...new Map(
+          output.tools.flatMap((entry) => {
+            if (!entry.enabled) return []
+            const tool = byID.get(entry.id)
+            if (!tool) return []
+            return [[entry.name, { name: entry.name, tool }] as const]
+          }),
+        ).values(),
+      ]
 
-        const usePatch =
-          input.modelID.includes("gpt-") && !input.modelID.includes("oss") && !input.modelID.includes("gpt-4")
-        if (tool.id === ApplyPatchTool.id) return usePatch
-        if (tool.id === EditTool.id || tool.id === WriteTool.id) return !usePatch
-
-        return true
-      })
-
-      const codeModeDescription = filtered.some((tool) => tool.id === "execute")
+      const codeModeDescription = materialized.some((item) => item.tool.id === "execute")
         ? yield* describeCodeMode(input)
         : undefined
-      const visible = filtered.filter((tool) => tool.id !== "execute" || codeModeDescription)
+      const visible = materialized.filter((item) => item.tool.id !== "execute" || codeModeDescription)
 
       return yield* Effect.forEach(
         visible,
-        Effect.fnUntraced(function* (tool: Tool.Def) {
-          const output = {
-            description: tool.description,
-            parameters: tool.parameters,
-            jsonSchema: tool.jsonSchema,
+        Effect.fnUntraced(function* (item) {
+          const definition = {
+            description: item.tool.description,
+            parameters: item.tool.parameters,
+            jsonSchema: item.tool.jsonSchema,
           }
-          yield* plugin.trigger("tool.definition", { toolID: tool.id }, output)
+          yield* plugin.trigger("tool.definition", { toolID: item.name }, definition)
           const jsonSchema =
-            output.parameters === tool.parameters || output.jsonSchema !== tool.jsonSchema
-              ? output.jsonSchema
+            definition.parameters === item.tool.parameters || definition.jsonSchema !== item.tool.jsonSchema
+              ? definition.jsonSchema
               : undefined
           return {
-            id: tool.id,
+            id: item.name,
             description: [
-              output.description,
-              tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
-              tool.id === "execute" ? codeModeDescription : undefined,
+              definition.description,
+              item.tool.id === TaskTool.id ? yield* describeTask(input.agent) : undefined,
+              item.tool.id === "execute" ? codeModeDescription : undefined,
             ]
               .filter(Boolean)
               .join("\n"),
-            parameters: output.parameters,
+            parameters: definition.parameters,
+            inputFormat: item.tool.inputFormat,
             jsonSchema,
-            execute: tool.execute,
-            formatValidationError: tool.formatValidationError,
+            execute: item.tool.execute,
+            formatValidationError: item.tool.formatValidationError,
           }
         }),
         { concurrency: "unbounded" },

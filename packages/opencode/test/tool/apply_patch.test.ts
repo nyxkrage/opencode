@@ -3,7 +3,7 @@ import path from "path"
 import * as fs from "fs/promises"
 import { LayerNode } from "@opencode-ai/core/effect/layer-node"
 import { Cause, Effect, Exit, Layer } from "effect"
-import { ApplyPatchTool } from "../../src/tool/apply_patch"
+import { ApplyPatchTool, grammar } from "../../src/tool/apply_patch"
 import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@opencode-ai/core/fs-util"
 import { Format } from "../../src/format"
@@ -53,7 +53,7 @@ type ToolCtx = typeof baseCtx & {
   ask: (input: AskInput) => Effect.Effect<void>
 }
 
-const execute = Effect.fn("ApplyPatchToolTest.execute")(function* (params: { patchText: string }, ctx: ToolCtx) {
+const execute = Effect.fn("ApplyPatchToolTest.execute")(function* (params: { text: string }, ctx: ToolCtx) {
   const info = yield* ApplyPatchTool
   const tool = yield* info.init()
   return yield* tool.execute(params, ctx)
@@ -86,24 +86,34 @@ const expectFailure = <A, E, R>(effect: Effect.Effect<A, E, R>, message?: string
 const expectReadFailure = (filepath: string) => expectFailure(readText(filepath))
 
 describe("tool.apply_patch freeform", () => {
-  it.live("requires patchText", () =>
+  it.live("advertises the Codex Lark grammar with a text parameter fallback", () =>
+    Effect.gen(function* () {
+      const info = yield* ApplyPatchTool
+      const tool = yield* info.init()
+
+      expect(tool.inputFormat).toEqual({ type: "grammar", syntax: "lark", definition: grammar })
+      expect(grammar).toContain("start: begin_patch hunk+ end_patch")
+    }),
+  )
+
+  it.live("requires text", () =>
     Effect.gen(function* () {
       const { ctx } = makeCtx()
-      yield* expectFailure(execute({ patchText: "" }, ctx), "patchText is required")
+      yield* expectFailure(execute({ text: "" }, ctx), "text is required")
     }),
   )
 
   it.live("rejects invalid patch format", () =>
     Effect.gen(function* () {
       const { ctx } = makeCtx()
-      yield* expectFailure(execute({ patchText: "invalid patch" }, ctx), "apply_patch verification failed")
+      yield* expectFailure(execute({ text: "invalid patch" }, ctx), "apply_patch verification failed")
     }),
   )
 
   it.live("rejects empty patch", () =>
     Effect.gen(function* () {
       const { ctx } = makeCtx()
-      yield* expectFailure(execute({ patchText: "*** Begin Patch\n*** End Patch" }, ctx), "patch rejected: empty patch")
+      yield* expectFailure(execute({ text: "*** Begin Patch\n*** End Patch" }, ctx), "patch rejected: empty patch")
     }),
   )
 
@@ -121,7 +131,7 @@ describe("tool.apply_patch freeform", () => {
         const patchText =
           "*** Begin Patch\n*** Add File: nested/new.txt\n+created\n*** Delete File: delete.txt\n*** Update File: modify.txt\n@@\n-line2\n+changed\n*** End Patch"
 
-        const result = yield* execute({ patchText }, ctx)
+        const result = yield* execute({ text: patchText }, ctx)
 
         expect(result.title).toContain("Success. Updated the following files")
         expect(result.output).toContain("Success. Updated the following files")
@@ -168,7 +178,7 @@ describe("tool.apply_patch freeform", () => {
         const patchText =
           "*** Begin Patch\n*** Update File: old/name.txt\n*** Move to: renamed/dir/name.txt\n@@\n-old content\n+new content\n*** End Patch"
 
-        yield* execute({ patchText }, ctx)
+        yield* execute({ text: patchText }, ctx)
 
         expect(calls.length).toBe(1)
         const permissionCall = calls[0]
@@ -194,7 +204,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: multi.txt\n@@\n-line2\n+changed2\n@@\n-line4\n+changed4\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
 
       expect(yield* readText(target)).toBe("line1\nchanged2\nline3\nchanged4\n")
     }),
@@ -211,7 +221,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: example.cs\n@@\n class Test {}\n+class Next {}\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
 
       expect(calls.length).toBe(1)
       const shown = calls[0].metadata.files[0]?.patch ?? ""
@@ -234,7 +244,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: insert_only.txt\n@@\n alpha\n+beta\n omega\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
 
       expect(yield* readText(target)).toBe("alpha\nbeta\nomega\n")
     }),
@@ -250,7 +260,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: no_newline.txt\n@@\n-no newline at end\n+first line\n+second line\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
 
       const contents = yield* readText(target)
       expect(contents.endsWith("\n")).toBe(true)
@@ -269,7 +279,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: old/name.txt\n*** Move to: renamed/dir/name.txt\n@@\n-old content\n+new content\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
 
       const moved = path.join(test.directory, "renamed", "dir", "name.txt")
       yield* expectReadFailure(original)
@@ -291,7 +301,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: old/name.txt\n*** Move to: renamed/dir/name.txt\n@@\n-from\n+new\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
 
       yield* expectReadFailure(original)
       expect(yield* readText(destination)).toBe("new\n")
@@ -307,7 +317,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Add File: duplicate.txt\n+new content\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       expect(yield* readText(target)).toBe("new content\n")
     }),
   )
@@ -318,7 +328,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText = "*** Begin Patch\n*** Update File: missing.txt\n@@\n-nope\n+better\n*** End Patch"
 
       yield* expectFailure(
-        execute({ patchText }, ctx),
+        execute({ text: patchText }, ctx),
         "apply_patch verification failed: Failed to read file to update",
       )
     }),
@@ -329,7 +339,7 @@ describe("tool.apply_patch freeform", () => {
       const { ctx } = makeCtx()
       const patchText = "*** Begin Patch\n*** Delete File: missing.txt\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
+      yield* expectFailure(execute({ text: patchText }, ctx))
     }),
   )
 
@@ -342,7 +352,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Delete File: dir\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
+      yield* expectFailure(execute({ text: patchText }, ctx))
     }),
   )
 
@@ -351,7 +361,7 @@ describe("tool.apply_patch freeform", () => {
       const { ctx } = makeCtx()
       const patchText = "*** Begin Patch\n*** Frobnicate File: foo\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx), "apply_patch verification failed")
+      yield* expectFailure(execute({ text: patchText }, ctx), "apply_patch verification failed")
     }),
   )
 
@@ -364,7 +374,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: modify.txt\n@@\n-missing\n+changed\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx), "apply_patch verification failed")
+      yield* expectFailure(execute({ text: patchText }, ctx), "apply_patch verification failed")
       expect(yield* readText(target)).toBe("line1\nline2\n")
     }),
   )
@@ -376,7 +386,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Add File: created.txt\n+hello\n*** Update File: missing.txt\n@@\n-old\n+new\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
+      yield* expectFailure(execute({ text: patchText }, ctx))
       yield* expectReadFailure(path.join(test.directory, "created.txt"))
     }),
   )
@@ -390,7 +400,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: tail.txt\n@@\n-last\n+end\n*** End of File\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       expect(yield* readText(target)).toBe("alpha\nend\n")
     }),
   )
@@ -404,7 +414,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: two_chunks.txt\n@@\n-b\n+B\n\n-d\n+D\n*** End Patch"
 
-      yield* expectFailure(execute({ patchText }, ctx))
+      yield* expectFailure(execute({ text: patchText }, ctx))
       expect(yield* readText(target)).toBe("a\nb\nc\nd\n")
     }),
   )
@@ -418,7 +428,7 @@ describe("tool.apply_patch freeform", () => {
 
       const patchText = "*** Begin Patch\n*** Update File: multi_ctx.txt\n@@ fn b\n-x=10\n+x=11\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       expect(yield* readText(target)).toBe("fn a\nx=10\ny=2\nfn b\nx=11\ny=20\n")
     }),
   )
@@ -435,7 +445,7 @@ describe("tool.apply_patch freeform", () => {
       const patchText =
         "*** Begin Patch\n*** Update File: eof_anchor.txt\n@@\n-marker\n-end\n+marker-changed\n+end\n*** End of File\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       // First marker unchanged, second marker changed
       expect(yield* readText(target)).toBe("start\nmarker\nmiddle\nmarker-changed\nend\n")
     }),
@@ -452,7 +462,7 @@ describe("tool.apply_patch freeform", () => {
 *** End Patch
 EOF`
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       expect(yield* readText(path.join(test.directory, "heredoc_test.txt"))).toBe("heredoc content\n")
     }),
   )
@@ -468,7 +478,7 @@ EOF`
 *** End Patch
 EOF`
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       expect(yield* readText(path.join(test.directory, "heredoc_no_cat.txt"))).toBe("no cat prefix\n")
     }),
   )
@@ -484,7 +494,7 @@ EOF`
       // Patch doesn't have trailing spaces - should still match via rstrip pass
       const patchText = "*** Begin Patch\n*** Update File: trailing_ws.txt\n@@\n-line2\n+changed\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       expect(yield* readText(target)).toBe("line1  \nchanged\nline3   \n")
     }),
   )
@@ -500,7 +510,7 @@ EOF`
       // Patch without leading spaces - should match via trim pass
       const patchText = "*** Begin Patch\n*** Update File: leading_ws.txt\n@@\n-line2\n+changed\n*** End Patch"
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       expect(yield* readText(target)).toBe("  line1\nchanged\n  line3\n")
     }),
   )
@@ -521,7 +531,7 @@ EOF`
       const patchText =
         '*** Begin Patch\n*** Update File: unicode.txt\n@@\n-He said "hello"\n+He said "hi"\n*** End Patch'
 
-      yield* execute({ patchText }, ctx)
+      yield* execute({ text: patchText }, ctx)
       // Result has ASCII quotes because that's what the patch specifies
       expect(yield* readText(target)).toBe(`He said "hi"\nsome${emDash}dash\nend\n`)
     }),

@@ -1,0 +1,9 @@
+OpenAI Codex
+Copyright 2025 OpenAI
+
+plugins/codex-prompt.md is adapted from codex-rs/protocol/src/prompts/base_instructions/default.md
+in openai/codex at commit 4d1f66bf8199713e4a77ad55458bc6e3dcbef5c5. It has been modified
+for OpenCode tool names, schemas, permissions, durable context, and client behavior.
+
+The adapted prompt is licensed under the Apache License, Version 2.0. See
+codex-prompt.LICENSE.

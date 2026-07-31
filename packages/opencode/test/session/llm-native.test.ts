@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { LLMEvent, ToolFailure } from "@opencode-ai/llm"
+import { LLMEvent, ToolFailure, toDefinitions } from "@opencode-ai/llm"
 import { LLMClient, RequestExecutor, WebSocketExecutor, type LLMClientShape } from "@opencode-ai/llm/route"
 import { jsonSchema, tool, type ModelMessage, type Tool } from "ai"
 import { Effect, Fiber, Layer, Stream } from "effect"
@@ -539,6 +539,33 @@ describe("session.llm-native.request", () => {
       expect(failure.message).toContain("incomplete")
     }),
   )
+
+  test("native tool wrapper preserves freeform input formats", () => {
+    const inputFormat = {
+      type: "grammar" as const,
+      syntax: "lark" as const,
+      definition: 'start: "ok"',
+    }
+    const wrapped = LLMNativeRuntime.nativeTools(
+      {
+        apply_patch: Object.assign(
+          {
+            description: "Apply patch",
+            inputSchema: jsonSchema({
+              type: "object",
+              properties: { text: { type: "string" } },
+              required: ["text"],
+            }),
+            execute: async (input: unknown) => input,
+          } satisfies Tool,
+          { inputFormat },
+        ),
+      },
+      { messages: [] as ModelMessage[], abort: new AbortController().signal },
+    )
+
+    expect(toDefinitions(wrapped)[0]?.inputFormat).toEqual(inputFormat)
+  })
 
   it.effect("emits native tool calls before overlapping local settlements complete", () =>
     Effect.gen(function* () {

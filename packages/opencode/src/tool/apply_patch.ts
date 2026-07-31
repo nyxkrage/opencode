@@ -15,8 +15,30 @@ import { FileSystem } from "@opencode-ai/core/filesystem"
 import { Format } from "../format"
 import * as Bom from "@/util/bom"
 
+// Keep this byte-for-byte aligned with codex-rs/core/src/tools/handlers/apply_patch.lark.
+export const grammar = `start: begin_patch hunk+ end_patch
+begin_patch: "*** Begin Patch" LF
+end_patch: "*** End Patch" LF?
+
+hunk: add_hunk | delete_hunk | update_hunk
+add_hunk: "*** Add File: " filename LF add_line+
+delete_hunk: "*** Delete File: " filename LF
+update_hunk: "*** Update File: " filename LF change_move? change?
+
+filename: /(.+)/
+add_line: "+" /(.*)/ LF -> line
+
+change_move: "*** Move to: " filename LF
+change: (change_context | change_line)+ eof_line?
+change_context: ("@@" | "@@ " /(.+)/) LF
+change_line: ("+" | "-" | " ") /(.*)/ LF
+eof_line: "*** End of File" LF
+
+%import common.LF
+`
+
 export const Parameters = Schema.Struct({
-  patchText: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
+  text: Schema.String.annotate({ description: "The full patch text that describes all changes to be made" }),
 })
 
 export const ApplyPatchTool = Tool.define(
@@ -31,21 +53,21 @@ export const ApplyPatchTool = Tool.define(
       params: Schema.Schema.Type<typeof Parameters>,
       ctx: Tool.Context,
     ) {
-      if (!params.patchText) {
-        return yield* Effect.fail(new Error("patchText is required"))
+      if (!params.text) {
+        return yield* Effect.fail(new Error("text is required"))
       }
 
       // Parse the patch to get hunks
       let hunks: Patch.Hunk[]
       try {
-        const parseResult = Patch.parsePatch(params.patchText)
+        const parseResult = Patch.parsePatch(params.text)
         hunks = parseResult.hunks
       } catch (error) {
         return yield* Effect.fail(new Error(`apply_patch verification failed: ${error}`))
       }
 
       if (hunks.length === 0) {
-        const normalized = params.patchText.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
+        const normalized = params.text.replace(/\r\n/g, "\n").replace(/\r/g, "\n").trim()
         if (normalized === "*** Begin Patch\n*** End Patch") {
           return yield* Effect.fail(new Error("patch rejected: empty patch"))
         }
@@ -304,8 +326,13 @@ export const ApplyPatchTool = Tool.define(
     })
 
     return {
-      description: DESCRIPTION,
+      description: `This is a FREEFORM tool, so do not wrap the patch in JSON.\n\n${DESCRIPTION}`,
       parameters: Parameters,
+      inputFormat: {
+        type: "grammar",
+        syntax: "lark",
+        definition: grammar,
+      },
       execute: (params: Schema.Schema.Type<typeof Parameters>, ctx: Tool.Context) =>
         run(params, ctx).pipe(Effect.orDie),
     }

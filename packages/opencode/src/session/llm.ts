@@ -221,9 +221,15 @@ const live: Layer.Layer<
           })
         : undefined
 
+      // Freeform tools require the native protocol adapter. Providers without
+      // freeform support still receive the tool's normalized JSON `{ text }`
+      // schema through the AI SDK fallback.
+      const requiresNative = Object.values(prepared.tools).some(
+        (item) => "inputFormat" in item && item.inputFormat !== undefined,
+      )
       // Runtime seam: native is an opt-in adapter over @opencode-ai/llm. It
       // either returns a ready LLMEvent stream or a concrete fallback reason.
-      if (flags.experimentalNativeLlm) {
+      if (flags.experimentalNativeLlm || requiresNative) {
         const native = LLMNativeRuntime.stream({
           model: input.model,
           provider: item,

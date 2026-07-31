@@ -15,6 +15,7 @@ import {
   toDefinitions,
   type JsonSchema,
   type LLMEvent,
+  type ToolInputFormat,
 } from "@opencode-ai/llm"
 import type { LLMClientShape } from "@opencode-ai/llm/route"
 import { LLMNative } from "./native-request"
@@ -26,13 +27,15 @@ export type StreamResult =
   | { readonly type: "supported"; readonly stream: Stream.Stream<LLMEvent, unknown> }
   | { readonly type: "unsupported"; readonly reason: string }
 
+type RuntimeTool = Tool & { readonly inputFormat?: ToolInputFormat }
+
 type StreamInput = {
   readonly model: Provider.Model
   readonly provider: Provider.Info
   readonly auth: Auth.Info | undefined
   readonly llmClient: LLMClientShape
   readonly messages: ModelMessage[]
-  readonly tools: Record<string, Tool>
+  readonly tools: Record<string, RuntimeTool>
   readonly toolChoice?: "auto" | "required" | "none"
   readonly temperature?: number
   readonly topP?: number
@@ -166,7 +169,7 @@ function nativeSchema(value: unknown): JsonSchema {
   return asSchema(value as Parameters<typeof asSchema>[0]).jsonSchema as JsonSchema
 }
 
-export function nativeTools(tools: Record<string, Tool>, input: Pick<StreamInput, "messages" | "abort">) {
+export function nativeTools(tools: Record<string, RuntimeTool>, input: Pick<StreamInput, "messages" | "abort">) {
   return Object.fromEntries(
     Object.entries(tools).map(([name, item]) => [
       name,
@@ -175,6 +178,7 @@ export function nativeTools(tools: Record<string, Tool>, input: Pick<StreamInput
       NativeTool.make({
         description: item.description ?? "",
         jsonSchema: nativeSchema(item.inputSchema),
+        inputFormat: item.inputFormat,
         execute: (args: unknown, ctx) =>
           Effect.tryPromise({
             try: () => {

@@ -895,7 +895,7 @@ test("does not emit blank patch snapshots between edit and task", async () => {
         state: {
           status: "completed",
           input: {
-            patchText: "*** Begin Patch\n*** End Patch",
+            text: "*** Begin Patch\n*** End Patch",
           },
           output: "",
           title: "apply_patch",
